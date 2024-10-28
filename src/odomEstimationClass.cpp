@@ -60,7 +60,7 @@ void OdomEstimationClass::updatePointsToMap(const pcl::PointCloud<pcl::PointXYZI
             addSurfCostFactor(downsampledSurfCloud,laserCloudSurfMap,problem,loss_function);
 
             ceres::Solver::Options options;
-            options.linear_solver_type = ceres::DENSE_QR;
+            options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
             options.max_num_iterations = 4;
             options.minimizer_progress_to_stdout = false;
             options.check_gradients = false;

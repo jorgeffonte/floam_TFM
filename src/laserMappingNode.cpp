@@ -34,6 +34,21 @@ std::queue<nav_msgs::OdometryConstPtr> odometryBuf;
 std::queue<sensor_msgs::PointCloud2ConstPtr> pointCloudBuf;
 
 ros::Publisher map_pub;
+#include <std_srvs/SetBool.h>  // Include the standard service header
+// Service callback function
+// bool setMaxDistance(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res) {
+//     if (req.data) {
+//         laserMapping.setMaxDistance(100.0);  // Example distance
+//         res.success = true;
+//         res.message = "Max distance set to 100.0";
+//     } else {
+//         laserMapping.setMaxDistance(60.0);  // Default distance
+//         res.success = true;
+//         res.message = "Max distance set to 60.0";
+//     }
+//     ROS_INFO("%s", res.message.c_str());
+//     return true;
+// }
 void odomCallback(const nav_msgs::Odometry::ConstPtr &msg)
 {
     mutex_lock.lock();
@@ -125,8 +140,9 @@ int main(int argc, char **argv)
     lidar_param.setMinDistance(min_dis);
 
     laserMapping.init(map_resolution);
-    ros::Subscriber subLaserCloud = nh.subscribe<sensor_msgs::PointCloud2>("/velodyne_points_filtered", 100, velodyneHandler);
-    ros::Subscriber subOdometry = nh.subscribe<nav_msgs::Odometry>("/odom", 100, odomCallback);
+    ros::Subscriber subLaserCloud = nh.subscribe<sensor_msgs::PointCloud2>("/velodyne_points_filtered", 1, velodyneHandler);
+    ros::Subscriber subOdometry = nh.subscribe<nav_msgs::Odometry>("/Odometry", 100, odomCallback);
+    // ros::ServiceServer service = nh.advertiseService("set_max_distance", setMaxDistance);
 
     map_pub = nh.advertise<sensor_msgs::PointCloud2>("/map", 100);
     std::thread laser_mapping_process{laser_mapping};

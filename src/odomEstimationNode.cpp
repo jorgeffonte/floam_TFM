@@ -13,6 +13,7 @@
 //ros lib
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <std_msgs/Float64.h>
 #include <nav_msgs/Odometry.h>
 #include <tf/transform_datatypes.h>
 #include <tf/transform_broadcaster.h>
@@ -25,7 +26,8 @@
 //local lib
 #include "lidar.h"
 #include "odomEstimationClass.h"
-
+#include <floam/PclPlusTime.h>
+#include <std_srvs/SetBool.h>  // Include the standard service header
 OdomEstimationClass odomEstimation;
 std::mutex mutex_lock;
 std::queue<sensor_msgs::PointCloud2ConstPtr> pointCloudEdgeBuf;
@@ -33,22 +35,28 @@ std::queue<sensor_msgs::PointCloud2ConstPtr> pointCloudSurfBuf;
 lidar::Lidar lidar_param;
 
 ros::Publisher pubLaserOdometry;
+ros::Publisher pubCompTime;
+double total_time =0, time_temp=0,preproces_time =0, all_time=0;
+static bool maxDistanceSet = false;
+
 void velodyneSurfHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
 {
     mutex_lock.lock();
     pointCloudSurfBuf.push(laserCloudMsg);
     mutex_lock.unlock();
 }
-void velodyneEdgeHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
+void velodyneEdgeHandler(const floam::PclPlusTime::ConstPtr &laserCloudMsg)
 {
-    mutex_lock.lock();
-    pointCloudEdgeBuf.push(laserCloudMsg);
-    mutex_lock.unlock();
+    boost::shared_ptr<const sensor_msgs::PointCloud2> pointCloudPtr(new sensor_msgs::PointCloud2(laserCloudMsg->point_cloud));
+    
+    std::lock_guard<std::mutex> lock(mutex_lock);
+    pointCloudEdgeBuf.push(pointCloudPtr);
+    preproces_time = laserCloudMsg->time;
 }
-
 bool is_odom_inited = false;
-double total_time =0;
+
 int total_frame=0;
+ros::ServiceClient client ;
 void odom_estimation(){
     while(1){
         if(!pointCloudEdgeBuf.empty() && !pointCloudSurfBuf.empty()){
@@ -92,7 +100,16 @@ void odom_estimation(){
                 total_frame++;
                 float time_temp = elapsed_seconds.count() * 1000;
                 total_time+=time_temp;
-                ROS_INFO("average odom estimation time %f ms \n \n", total_time/total_frame);
+                float all_time = preproces_time+time_temp;
+                ROS_INFO("Current odom estimation time %f ms", time_temp);
+                // ROS_INFO("currrent time Ros %f", (ros::Time::now()- pointcloud_time).toSec()*1000.0);
+                ROS_INFO("preprocess time plus odom  %f", all_time);
+                ROS_INFO("Average odom estimation time %f ms \n \n", total_time/total_frame);
+                auto comp_time = std_msgs::Float64();
+                comp_time.data =all_time;
+
+                pubCompTime.publish(comp_time);
+
             }
 
 
@@ -120,8 +137,20 @@ void odom_estimation(){
             laserOdometry.pose.pose.position.x = t_current.x();
             laserOdometry.pose.pose.position.y = t_current.y();
             laserOdometry.pose.pose.position.z = t_current.z();
-            pubLaserOdometry.publish(laserOdometry);
 
+            if (abs(t_current.z()) >= 3 && !maxDistanceSet) {
+                // Call the service to set max_distance
+                std_srvs::SetBool srv;
+                srv.request.data = true; // Set the max_distance to the alternative value (e.g., 100.0)
+                if (client.call(srv)) {
+                    ROS_INFO("Max distance set successfully");
+                    maxDistanceSet = true;
+                } else {
+                    ROS_ERROR("Failed to call service to set max distance");
+                }
+            }
+            pubLaserOdometry.publish(laserOdometry);
+            
         }
         //sleep 2 ms every time
         std::chrono::milliseconds dura(2);
@@ -154,10 +183,12 @@ int main(int argc, char **argv)
     lidar_param.setMinDistance(min_dis);
 
     odomEstimation.init(lidar_param, map_resolution);
-    ros::Subscriber subEdgeLaserCloud = nh.subscribe<sensor_msgs::PointCloud2>("/laser_cloud_edge", 100, velodyneEdgeHandler);
+    ros::Subscriber subEdgeLaserCloud = nh.subscribe<floam::PclPlusTime>("/laser_cloud_edge", 100, velodyneEdgeHandler);
     ros::Subscriber subSurfLaserCloud = nh.subscribe<sensor_msgs::PointCloud2>("/laser_cloud_surf", 100, velodyneSurfHandler);
+    client = nh.serviceClient<std_srvs::SetBool>("set_max_distance");
 
-    pubLaserOdometry = nh.advertise<nav_msgs::Odometry>("/odom", 100);
+    pubLaserOdometry = nh.advertise<nav_msgs::Odometry>("/Odometry", 100);
+    pubCompTime = nh.advertise<std_msgs::Float64>("/comp_time", 100);
     std::thread odom_estimation_process{odom_estimation};
 
     ros::spin();

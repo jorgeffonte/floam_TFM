@@ -29,13 +29,10 @@ void LaserProcessingClass::featureExtraction(const pcl::PointCloud<pcl::PointXYZ
             continue;
         double angle = atan(pc_in->points[i].z / distance) * 180 / M_PI;
         
-        if (N_SCANS == 16)
-        {
-            scanID = int((angle + 15) / 2 + 0.5);
+        if (N_SCANS == 16) {
+            scanID = round((angle + 22.5) * 15.0 / 45.0); // Ajuste basado en el campo de visión vertical de 45 grados
             if (scanID > (N_SCANS - 1) || scanID < 0)
-            {
                 continue;
-            }
         }
         else if (N_SCANS == 32)
         {
